@@ -6,4 +6,4 @@ env/
 venv/
 .env
 *.sqlite3
-google-service-account
+google-service-account.json

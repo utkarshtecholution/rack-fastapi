@@ -1,9 +1,7 @@
 import os
-import json
 import base64
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from google.cloud import pubsub_v1
 from dotenv import load_dotenv
@@ -17,9 +15,9 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CRE
 
 # Environment variables
 PROJECT_ID = os.getenv("PROJECT_ID", "proj-qsight-asmlab")
-SUBSCRIPTION_TOPIC = os.getenv("SUBSCRIPTION_TOPIC", "projects/proj-qsight-asmlab/topics/dummy-topic")
-PUBLISHING_TOPIC = os.getenv("PUBLISHING_TOPIC", "projects/proj-qsight-asmlab/topics/dummy-topic-output")
-SUBSCRIPTION_ID = os.getenv("SUBSCRIPTION_ID", "fastapi-subscription")
+SUBSCRIPTION_TOPIC = os.getenv("SUBSCRIPTION_TOPIC", "projects/proj-qsight-asmlab/topics/trigger-capture-sub")
+PUBLISHING_TOPIC = os.getenv("PUBLISHING_TOPIC", "projects/proj-qsight-asmlab/topics/trigger-capture")
+SUBSCRIPTION_ID = os.getenv("SUBSCRIPTION_ID", "receive-image-sub")
 
 # Initialize Pub/Sub clients
 publisher = pubsub_v1.PublisherClient()

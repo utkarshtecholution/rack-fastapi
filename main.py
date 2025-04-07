@@ -13,6 +13,7 @@ load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(title="Pub/Sub Service")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # Environment variables
 PROJECT_ID = os.getenv("PROJECT_ID", "proj-qsight-asmlab")

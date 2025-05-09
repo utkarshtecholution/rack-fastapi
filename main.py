@@ -1,10 +1,15 @@
 import os
+import json
+import uuid
 import base64
+import datetime
 from typing import Dict, Any, Optional
-from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel
 from google.cloud import pubsub_v1
 from dotenv import load_dotenv
+from google.cloud import storage
+
 
 # Load environment variables
 load_dotenv()
@@ -12,6 +17,11 @@ load_dotenv()
 # Initialize FastAPI app
 app = FastAPI(title="Pub/Sub Service")
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+# Initialize GCS client
+storage_client = storage.Client()
+bucket_name = "compartment_images"  # Replace with your bucket name
+bucket = storage_client.bucket(bucket_name)
 
 # Environment variables
 PROJECT_ID = os.getenv("PROJECT_ID", "proj-qsight-asmlab")
@@ -82,19 +92,76 @@ def handle_message(message):
 # This function is replaced by start_subscriber_thread
 
 @app.post("/publish")
-async def publish(message_data: PublishMessage):
+async def publish(
+    message: Optional[str] = Form(None),
+    attributes: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None)
+):
     """
-    Publish a message to the Pub/Sub topic
+    Publish a message or image reference to the Pub/Sub topic
     """
     try:
-        # Encode message data
-        data = message_data.message.encode("utf-8")
+        # Handle attributes if provided
+        attr_dict = {}
+        if attributes:
+            try:
+                # Only try to parse if attributes is not None or empty
+                if attributes.strip():
+                    attr_dict = json.loads(attributes)
+            except json.JSONDecodeError:
+                # If JSON parsing fails, log it but continue with empty attributes
+                print(f"Warning: Invalid JSON in attributes: {attributes}")
         
-        # Publish message
+        # Check if this is a file upload
+        if file:
+            # Generate a unique filename
+            file_extension = file.filename.split('.')[-1] if '.' in file.filename else ''
+            unique_filename = f"{uuid.uuid4()}.{file_extension}"
+            
+            # Read file content
+            content = await file.read()
+            
+            # Upload to GCS
+            blob = bucket.blob(unique_filename)
+            blob.upload_from_string(
+                content,
+                content_type=file.content_type
+            )
+            
+            # Generate a signed URL (valid for 1 hour)
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=datetime.timedelta(hours=1),
+                method="GET"
+            )
+            
+            # Create a message with the file metadata and signed URL
+            message_data = {
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "storage_path": f"gs://{bucket_name}/{unique_filename}",
+                "signed_url": signed_url,
+                "url_expiry": (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat()
+            }
+            
+            # Add file metadata to the message attributes
+            attr_dict["content_type"] = "application/json"
+            attr_dict["message_type"] = "file_reference"
+            
+            # Encode the message as JSON
+            data = json.dumps(message_data).encode("utf-8")
+            
+        elif message:
+            # Encode text message
+            data = message.encode("utf-8")
+        else:
+            raise HTTPException(status_code=400, detail="Either message or file must be provided")
+        
+        # Publish message to Pub/Sub
         future = publisher.publish(
             publishing_topic_path, 
             data=data,
-            **message_data.attributes if message_data.attributes else {}
+            **attr_dict
         )
         
         # Get the message ID
@@ -102,6 +169,10 @@ async def publish(message_data: PublishMessage):
         
         return {"success": True, "message_id": message_id}
     except Exception as e:
+        # Include more debugging information in the error
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to publish message: {str(e)}")
 
 @app.post("/hello")
